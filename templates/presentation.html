@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Voelk Digital Signage</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='static/reveal/dist/reveal.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='static/reveal/dist/theme/black.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='static/css/signage.css') }}">
+</head>
+<body>
+  <div class="reveal"><div class="slides">
+    {% if mode in ('mixed', 'tournament') %}
+    <section class="tournament-slide current-matches-slide">
+      <h1>Aktuelle Spiele</h1>
+      <p>10 vergangene, das aktuelle und 10 kommende Spiele</p>
+      <iframe class="current-matches-widget" title="Aktuelle Spielübersicht" src="/api/current-matches-widget" allowtransparency="true" frameborder="0"></iframe>
+    </section>
+    {% for widget in widgets %}
+    <section class="tournament-slide">
+      <h1>Gruppe {{ widget.group }}</h1>
+      <div class="group-widget-grid">
+        <div><h2>Rangliste</h2><iframe class="group-table-widget" title="Rangliste Gruppe {{ widget.group }}" src="{{ widget.table_url }}" allowtransparency="true" frameborder="0"></iframe></div>
+        <div><h2>Alle Spiele der Gruppe</h2><iframe class="group-matches-widget" title="Spiele Gruppe {{ widget.group }}" src="{{ widget.matches_url }}" allowtransparency="true" frameborder="0"></iframe></div>
+      </div>
+    </section>
+    {% endfor %}
+    {% endif %}
+    {% if mode in ('mixed', 'sponsors') %}
+      {% if save_the_date %}
+      <section class="sponsor-slide save-the-date"><img src="{{ url_for('static', filename=save_the_date.path) }}" alt="Save the Date"></section>
+      {% endif %}
+      {% for sponsor in sponsors %}
+      <section class="sponsor-slide{% if sponsor.type == 'video' %} video-slide{% endif %}"{% if sponsor.type == 'video' %} data-autoslide="0"{% endif %}>
+        {% if sponsor.type == 'video' %}
+        <video muted playsinline preload="metadata"><source src="{{ url_for('static', filename='assets/sponsoren/' + sponsor.path) }}" type="{{ sponsor.mime }}"></video>
+        {% else %}
+        <img src="{{ url_for('static', filename='assets/sponsoren/' + sponsor.path) }}" alt="{{ sponsor.name }}">
+        {% endif %}
+      </section>
+      {% endfor %}
+      {% for sponsor in hearts %}
+      <section class="sponsor-slide heart-of-colors{% if sponsor.type == 'video' %} video-slide{% endif %}"{% if sponsor.type == 'video' %} data-autoslide="0"{% endif %}>
+        {% if sponsor.type == 'video' %}
+        <video muted playsinline preload="metadata"><source src="{{ url_for('static', filename='assets/sponsoren/' + sponsor.path) }}" type="{{ sponsor.mime }}"></video>
+        {% else %}
+        <img src="{{ url_for('static', filename='assets/sponsoren/' + sponsor.path) }}" alt="Heart of Colors">
+        {% endif %}
+      </section>
+      {% endfor %}
+    {% endif %}
+  </div></div>
+  <script src="{{ url_for('static', filename='static/reveal/dist/reveal.js') }}"></script>
+  <script>
+    Reveal.initialize({ width: '100%', height: '100%', margin: 0.04, autoSlide: 8000,
+      loop: true, controls: false, progress: false, transition: 'fade',
+      autoSlideStoppable: false, disableLayout: false });
+
+    // Widgets regelmaessig neu laden, damit Ergebnisse im Dauerbetrieb aktuell bleiben.
+    setInterval(() => {
+      document.querySelectorAll('.tournament-slide iframe').forEach(widget => {
+        widget.src = widget.src;
+      });
+    }, 60000);
+
+    function playCurrentVideo() {
+      document.querySelectorAll('.video-slide video').forEach(video => video.pause());
+      const video = Reveal.getCurrentSlide().querySelector('video');
+      if (video) video.play().catch(() => {});
+    }
+    Reveal.on('ready', playCurrentVideo);
+    Reveal.on('slidechanged', playCurrentVideo);
+    document.querySelectorAll('.video-slide video').forEach(video => {
+      video.addEventListener('ended', () => Reveal.next());
+    });
+  </script>
+</body>
+</html>

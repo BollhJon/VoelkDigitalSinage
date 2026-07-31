@@ -1,0 +1,14 @@
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+.reveal { position: fixed; inset: 0; overflow: hidden; background: #171717; }
+.reveal .slides { width: 100%; height: 100%; }
+.reveal .slides > section {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 3vh 4vw;
+  display: none;
+  overflow: hidden;
+}
+/* Dieser Zustand muss die Layout-Regeln der einzelnen Folientypen uebersteuern. */
+.reveal .slides > section:not(.present) { display: none !important; }
+.reveal .slides > section.present { display: flex !important; }

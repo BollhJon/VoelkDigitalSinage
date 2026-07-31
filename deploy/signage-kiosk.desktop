@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Völk Digital Signage
+Exec=sh -c 'sleep 8; chromium-browser --kiosk --noerrdialogs --disable-infobars --check-for-update-interval=31536000 __START_URL__'
+X-GNOME-Autostart-enabled=true
