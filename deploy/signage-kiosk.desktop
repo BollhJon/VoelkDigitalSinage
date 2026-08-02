@@ -1,5 +1,5 @@
 [Desktop Entry]
 Type=Application
 Name=Völk Digital Signage
-Exec=sh -c 'sleep 60; chromium --kiosk --password-store=basic --use-mock-keychain --noerrdialogs --disable-infobars --check-for-update-interval=180 __START_URL__'
+Exec=sh -c 'sleep 60; chromium --kiosk --password-store=basic --disable-session-crashed-bubble --no-default-browser-check --disable-features=Translate --no-first-run --overscroll-history-navigation=0 --disable-translate --use-mock-keychain --noerrdialogs --disable-infobars --check-for-update-interval=180 __START_URL__'
 X-GNOME-Autostart-enabled=true
