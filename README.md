@@ -29,9 +29,9 @@ Danach `http://127.0.0.1:8000` öffnen. Bilder und Videos im gesamten Ordner `as
 Raspberry Pi OS **mit Desktop** installieren, Netzwerk und GitHub-Zugriff einrichten, dann einmalig ausführen:
 
 ```bash
-git clone https://github.com/ORGANISATION/REPOSITORY.git
+git clone https://github.com/BollhJon/VoelkDigitalSignage.git
 cd REPOSITORY
-bash scripts/install-raspi.sh https://github.com/ORGANISATION/REPOSITORY.git main
+bash scripts/install-raspi.sh https://github.com/BollhJon/VoelkDigitalSignage.git main
 ```
 
 Das Skript installiert Chromium und Python-Abhängigkeiten, erstellt den `signage`-Dienst und richtet Chromium für den Desktop-Autostart ein. Der Dienst holt beim Booten den aktuellen Stand des Branches von GitHub, installiert bei Bedarf Python-Abhängigkeiten und startet den Server. Änderungen direkt auf dem Pi in versionierten Dateien werden dabei absichtlich durch den GitHub-Stand ersetzt.
