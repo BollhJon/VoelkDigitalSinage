@@ -13,7 +13,7 @@ from flask import Flask, redirect, render_template
 app = Flask(__name__, static_folder=".", static_url_path="/static")
 
 SPONSOR_DIRECTORY = Path(app.static_folder) / "assets" / "sponsoren"
-IMAGE_EXTENSIONS = {".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp"}
+IMAGE_EXTENSIONS = {".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp", ".svg"}
 VIDEO_EXTENSIONS = {".mp4", ".ogg", ".webm"}
 VIDEO_MIME_TYPES = {".mp4": "video/mp4", ".ogg": "video/ogg", ".webm": "video/webm"}
 # Anzeigedauern fuer die Sponsoring-Folien in Sekunden.
