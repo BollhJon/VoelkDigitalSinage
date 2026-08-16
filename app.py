@@ -16,13 +16,18 @@ SPONSOR_DIRECTORY = Path(app.static_folder) / "assets" / "sponsoren"
 IMAGE_EXTENSIONS = {".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp"}
 VIDEO_EXTENSIONS = {".mp4", ".ogg", ".webm"}
 VIDEO_MIME_TYPES = {".mp4": "video/mp4", ".ogg": "video/ogg", ".webm": "video/webm"}
+# Anzeigedauern fuer die Sponsoring-Folien in Sekunden.
+SAVE_THE_DATE_DURATION_SECONDS = 5
+GOLD_SPONSOR_DURATION_SECONDS = 5
+OTHER_SPONSOR_DURATION_SECONDS = 5
+OTHER_SPONSORS_PER_CYCLE = 4
+TOURNAMENT_DISPLAY_DURATION_SECONDS = 3
+MATCHES_PER_PAGE = 20
+FINAL_MATCHES_PER_PAGE = 10
+# Gruppenphase
 TOURNAMENT_ID = os.environ.get("TOURNAMENT_ID", "1757255205")
-TOURNAMENT_SOURCE_URL = f"https://www.meinturnierplan.de/showit.php?id={TOURNAMENT_ID}"
-TOURNAMENT_GROUPS = tuple(
-    group.strip()
-    for group in os.environ.get("TOURNAMENT_GROUPS", "1,2,3").split(",")
-    if group.strip()
-)
+# Finalrunde
+FINAL_TOURNAMENT_ID = os.environ.get("FINAL_TOURNAMENT_ID", "1757569613")
 
 
 def media_entry(path: Path, root: Path):
@@ -35,20 +40,70 @@ def media_entry(path: Path, root: Path):
     }
 
 
-def sponsor_media():
-    """Findet Bilder und Videos rekursiv; Heart of Colors bleibt als Block zusammen."""
+def group_label(index):
+    """Erzeugt Gruppenbezeichnungen A, B, ..., Z, AA, AB, ... ."""
+    label = ""
+    while True:
+        index, remainder = divmod(index, 26)
+        label = chr(ord("A") + remainder) + label
+        if index == 0:
+            return label
+        index -= 1
+
+
+def sponsor_profiles():
+    """Liest Sponsor-Ordner und ihre Beitraege inklusive optionaler Logos ein."""
     if not SPONSOR_DIRECTORY.is_dir():
         return [], []
 
-    media = [
-        media_entry(file, SPONSOR_DIRECTORY)
-        for file in sorted(SPONSOR_DIRECTORY.rglob("*"), key=lambda entry: str(entry).casefold())
-        if file.is_file() and file.suffix.casefold() in IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
-    ]
-    hearts, sponsors = [], []
-    for item in media:
-        (hearts if "heart of colors" in item["path"].casefold() else sponsors).append(item)
-    return sponsors, hearts
+    gold_sponsors, other_sponsors = [], []
+    for category in sorted(SPONSOR_DIRECTORY.iterdir(), key=lambda entry: entry.name.casefold()):
+        if not category.is_dir():
+            continue
+        category_name = category.name.casefold()
+        target = gold_sponsors if "gold" in category_name else other_sponsors
+        if not any(level in category_name for level in ("gold", "silber", "bronze")):
+            continue
+
+        for sponsor_directory in sorted(category.iterdir(), key=lambda entry: entry.name.casefold()):
+            if not sponsor_directory.is_dir():
+                continue
+            files = [
+                file for file in sorted(sponsor_directory.rglob("*"), key=lambda entry: str(entry).casefold())
+                if file.is_file() and file.suffix.casefold() in IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
+            ]
+            small_logo = next((file for file in files if file.stem.casefold() == "logo_small"), None)
+            media = []
+            for file in files:
+                # LOGO_small ist eine Einblendung, kein eigenstaendiger Beitrag.
+                if file == small_logo:
+                    continue
+                item = media_entry(file, Path(app.static_folder))
+                item["is_big_logo"] = file.stem.casefold() == "logo_big"
+                media.append(item)
+            if not media:
+                continue
+            target.append({
+                "id": f"{category.name}/{sponsor_directory.name}",
+                "name": sponsor_directory.name,
+                "media": media,
+                "small_logo": media_entry(small_logo, Path(app.static_folder)) if small_logo else None,
+            })
+    return gold_sponsors, other_sponsors
+
+
+def sponsoring_durations():
+    """Liefert die in der Vorlage benoetigten Dauern in Millisekunden."""
+    return {
+        "save_the_date": SAVE_THE_DATE_DURATION_SECONDS * 1000,
+        "gold": GOLD_SPONSOR_DURATION_SECONDS * 1000,
+        "other": OTHER_SPONSOR_DURATION_SECONDS * 1000,
+    }
+
+
+def tournament_display_duration():
+    """Liefert die Anzeigedauer der Turnierfolien in Millisekunden."""
+    return TOURNAMENT_DISPLAY_DURATION_SECONDS * 1000
 
 
 def save_the_date_media():
@@ -57,7 +112,7 @@ def save_the_date_media():
     return media_entry(image, Path(app.static_folder)) if image.is_file() else None
 
 
-def tournament_widgets():
+def tournament_widgets(tournament_id):
     """Erzeugt je Gruppe die offiziellen Ranglisten- und Spielplan-Widgets."""
     style = {
         "s[size]": 9,
@@ -81,23 +136,22 @@ def tournament_widgets():
         "s[wrap]": "false",
     }
     widgets = []
-    for group in TOURNAMENT_GROUPS:
-        base = {"id": TOURNAMENT_ID, "gr": group, **style}
+    for index, group in enumerate(tournament_groups(tournament_id)):
+        base = {"id": tournament_id, "gr": group, **style}
         table = {**base, "s[logosize]": 20}
         matches = {**base, "s[ehrsize]": 10, "s[ehrtop]": 9, "s[ehrbottom]": 3}
         widgets.append({
             "group": group,
+            "label": group_label(index),
             "table_url": "https://www.meinturnierplan.de/displayTable.php?" + urlencode(table) + "&sbr",
             # Ohne mn-Parameter zeigt das Widget alle Spiele dieser Gruppe.
             "matches_url": "https://www.meinturnierplan.de/displayMatches.php?" + urlencode(matches) + "&sbr",
         })
     return widgets
 
-
-def current_match_number():
-    """Ermittelt die Nummer des laufenden Spiels fuer das Uebersichtsfenster."""
+def tournament_groups(tournament_id):
     response = requests.get(
-        TOURNAMENT_SOURCE_URL,
+        f"https://www.meinturnierplan.de/showit.php?id={tournament_id}",
         headers={"User-Agent": "VoelkDigitalSignage/1.0"},
         timeout=10,
     )
@@ -108,33 +162,34 @@ def current_match_number():
 
     tournaments = json.loads(state.group(1)).get("tournaments", {})
     tournament = next(iter(tournaments.values()))["data"]
-    matches = tournament.get("groupMatches", [])
+    groups = len(tournament.get("groups"))    
+    return tuple(str(group) for group in range(1, groups + 1))
+
+def tournament_matches(tournament_id):
+    response = requests.get(
+        f"https://www.meinturnierplan.de/showit.php?id={tournament_id}",
+        headers={"User-Agent": "VoelkDigitalSignage/1.0"},
+        timeout=10,
+    )
+    response.raise_for_status()
+    state = re.search(r"window\.preloadedState\s*=\s*(.*?);", response.text, re.DOTALL)
+    if not state:
+        raise ValueError("Turnierdaten nicht gefunden")
+
+    tournaments = json.loads(state.group(1)).get("tournaments", {})
+    tournament = next(iter(tournaments.values()))["data"]
+    matches = (
+        tournament.get("groupMatches")
+        or tournament.get("finalMatches")
+        or []
+    )
     if not matches:
         raise ValueError("Keine Gruppenspiele gefunden")
+    return matches
 
-    active_index = next((i for i, match in enumerate(matches) if match.get("isActive")), None)
-    if active_index is None:
-        # Vor dem Start: erstes Spiel; in einer Pause: erstes noch nicht gespieltes Spiel.
-        active_index = next(
-            (i for i, match in enumerate(matches) if match.get("score1") is None),
-            len(matches) - 1,
-        )
-    current = matches[active_index]
-    return int(current.get("displayId") or current.get("matchNumber") or active_index + 1)
-
-
-@app.get("/api/current-matches-widget")
-def current_matches_widget():
-    """Leitet auf ein Widget mit 10 vergangenen, dem aktuellen und 10 kommenden Spielen."""
-    try:
-        current = current_match_number()
-    except (requests.RequestException, ValueError, KeyError, IndexError, StopIteration):
-        current = 11
-
-    start = max(1, current - 10)
-    end = current + 10
+def matches_widget_url(start, end, tournament_id, final_round):
     params = {
-        "id": TOURNAMENT_ID,
+        "id": tournament_id,
         "mn": f"{start}-{end}",
         "s[size]": 9,
         "s[sizeheader]": 10,
@@ -159,38 +214,94 @@ def current_matches_widget():
         "s[ehrbottom]": 3,
         "s[wrap]": "false",
     }
-    return redirect("https://www.meinturnierplan.de/displayMatches.php?" + urlencode(params) + "&sbr")
+    flags = "&se&sp&sbr" if final_round else "&sbr"
+    return "https://www.meinturnierplan.de/displayMatches.php?" + urlencode(params) + flags
+
+
+def matches_pages(tournament_id, final_round):
+    if final_round:
+        matches_per_page = FINAL_MATCHES_PER_PAGE
+    else:
+        matches_per_page = MATCHES_PER_PAGE
+    
+    try:
+        matches = tournament_matches(tournament_id)
+        numbers = [
+            int(match.get("displayId") or match.get("matchNumber") or index + 1)
+            for index, match in enumerate(matches)
+        ]
+        first, last = min(numbers), max(numbers)
+    except (requests.RequestException, ValueError, KeyError, IndexError, StopIteration) as e:
+        first, last = 1, matches_per_page
+
+
+    pages = []
+    for start in range(first, last + 1, matches_per_page):
+        end = min(start + matches_per_page - 1, last)
+        pages.append({
+            "start": start, 
+            "end": end, 
+            "url": matches_widget_url(start, end, tournament_id, final_round),
+        })
+    print(f"Matches pages for tournament {tournament_id}: {pages}")
+    return pages
 
 
 @app.get("/")
-def mixed_presentation():
-    sponsors, hearts = sponsor_media()
-    return render_template(
-        "presentation.html",
-        mode="mixed",
-        sponsors=sponsors,
-        hearts=hearts,
-        save_the_date=save_the_date_media(),
-        widgets=tournament_widgets(),
-    )
+def presentation_index():
+    """Es gibt keine gemischte Praesentation mehr."""
+    return redirect("/turnier")
 
 
 @app.get("/turnier")
 def tournament_presentation():
     return render_template(
-        "presentation.html", mode="tournament", sponsors=[], widgets=tournament_widgets()
+        "presentation.html", mode="tournament", gold_sponsors=[], other_sponsors=[],
+        other_sponsors_per_cycle=OTHER_SPONSORS_PER_CYCLE,
+        match_pages=matches_pages(TOURNAMENT_ID, False), final_match_pages=matches_pages(FINAL_TOURNAMENT_ID, True), widgets=tournament_widgets(TOURNAMENT_ID),
+        tournament_display_duration=tournament_display_duration(),
+        show_group_phase=True, show_final_phase=True,
+    )
+
+
+@app.get("/group")
+def group_presentation():
+    return render_template(
+        "presentation.html", mode="group", gold_sponsors=[], other_sponsors=[],
+        other_sponsors_per_cycle=OTHER_SPONSORS_PER_CYCLE,
+        match_pages=matches_pages(TOURNAMENT_ID, False), final_match_pages=[], widgets=tournament_widgets(TOURNAMENT_ID),
+        tournament_display_duration=tournament_display_duration(),
+        show_group_phase=True, show_final_phase=False,
+    )
+
+
+@app.get("/finale")
+def final_presentation():
+    return render_template(
+        "presentation.html", mode="finale", gold_sponsors=[], other_sponsors=[],
+        other_sponsors_per_cycle=OTHER_SPONSORS_PER_CYCLE,
+        match_pages=[], final_match_pages=matches_pages(FINAL_TOURNAMENT_ID, True), widgets=[],
+        tournament_display_duration=tournament_display_duration(),
+        show_group_phase=False, show_final_phase=True,
     )
 
 
 @app.get("/sponsoring")
 def sponsoring_presentation():
-    sponsors, hearts = sponsor_media()
+    gold_sponsors, other_sponsors = sponsor_profiles()
     return render_template(
         "presentation.html",
         mode="sponsors",
-        sponsors=sponsors,
-        hearts=hearts,
+        gold_sponsors=gold_sponsors,
+        other_sponsors=other_sponsors,
         save_the_date=save_the_date_media(),
+        sponsoring_durations=sponsoring_durations(),
+        other_sponsors_per_cycle=OTHER_SPONSORS_PER_CYCLE,
+        match_pages=[],
+        final_match_pages=[],
+        tournament_display_duration=tournament_display_duration(),
+        show_group_phase=False,
+        show_final_phase=False,
         widgets=[],
     )
 
