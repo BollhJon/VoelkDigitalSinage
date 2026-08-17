@@ -1,6 +1,6 @@
 # Völk Digital Signage
 
-Lokale Digital-Signage für Raspberry Pi Zero 2 W. Der Flask-Server liefert eine lokal gespeicherte, reveal.js-kompatible Präsentation aus, Chromium zeigt sie im Kiosk-Modus an.
+Lokale Digital-Signage für Raspberry Pi. Der Flask-Server liefert eine lokal gespeicherte, reveal.js-kompatible Präsentation aus, Chromium zeigt sie im Kiosk-Modus an.
 
 ## URLs
 

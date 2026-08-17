@@ -243,7 +243,6 @@ def matches_pages(tournament_id, final_round):
             "end": end, 
             "url": matches_widget_url(start, end, tournament_id, final_round),
         })
-    print(f"Matches pages for tournament {tournament_id}: {pages}")
     return pages
 
 
