@@ -24,10 +24,14 @@ OTHER_SPONSORS_PER_CYCLE = 4
 TOURNAMENT_DISPLAY_DURATION_SECONDS = 3
 MATCHES_PER_PAGE = 20
 FINAL_MATCHES_PER_PAGE = 10
-# Gruppenphase
-TOURNAMENT_ID = os.environ.get("TOURNAMENT_ID", "1757255205")
-# Finalrunde
-FINAL_TOURNAMENT_ID = os.environ.get("FINAL_TOURNAMENT_ID", "1757569613")
+# Spielplan IDs
+SINAGE_TOURNAMENT_IDS = os.environ.get("SINAGE_TOURNAMENT_IDS", "0jj2i6bso4")
+TOURNAMENT_ID = "1757255205"
+FINAL_TOURNAMENT_ID = "1757569613"
+# Startup Mode
+#SINAGE_MODE = os.environ.get("SINAGE_MODE", "SPONSORING")
+SINAGE_MODE = os.environ.get("SINAGE_MODE", "TURNIER")
+
 
 
 def media_entry(path: Path, root: Path):
@@ -143,49 +147,55 @@ def tournament_widgets(tournament_id):
         widgets.append({
             "group": group,
             "label": group_label(index),
-            "table_url": "https://www.meinturnierplan.de/displayTable.php?" + urlencode(table) + "&sbr",
+            "table_url": "https://www.meinturnierplan.ch/displayTable.php?" + urlencode(table) + "&sbr",
             # Ohne mn-Parameter zeigt das Widget alle Spiele dieser Gruppe.
-            "matches_url": "https://www.meinturnierplan.de/displayMatches.php?" + urlencode(matches) + "&sbr",
+            "matches_url": "https://www.meinturnierplan.ch/displayMatches.php?" + urlencode(matches) + "&sbr",
         })
     return widgets
 
 def tournament_groups(tournament_id):
     response = requests.get(
-        f"https://www.meinturnierplan.de/showit.php?id={tournament_id}",
+        f"https://www.meinturnierplan.ch/showit.php?id={tournament_id}",
         headers={"User-Agent": "VoelkDigitalSignage/1.0"},
         timeout=10,
     )
     response.raise_for_status()
-    state = re.search(r"window\.preloadedState\s*=\s*(.*?);", response.text, re.DOTALL)
-    if not state:
-        raise ValueError("Turnierdaten nicht gefunden")
-
-    tournaments = json.loads(state.group(1)).get("tournaments", {})
-    tournament = next(iter(tournaments.values()))["data"]
-    groups = len(tournament.get("groups"))    
-    return tuple(str(group) for group in range(1, groups + 1))
+    groups_match = re.search(r'"groups"\s*:\s*\[(.*?)\]', response.text, re.DOTALL)
+    if not groups_match:
+        return tuple()
+    groups_count = len(re.findall(r'"name"\s*:\s*"[^"]+"', groups_match.group(1), re.DOTALL))
+    return tuple(str(group) for group in range(1, groups_count + 1))
 
 def tournament_matches(tournament_id):
     response = requests.get(
-        f"https://www.meinturnierplan.de/showit.php?id={tournament_id}",
+        f"https://www.meinturnierplan.ch/showit.php?id={tournament_id}",
         headers={"User-Agent": "VoelkDigitalSignage/1.0"},
         timeout=10,
     )
     response.raise_for_status()
-    state = re.search(r"window\.preloadedState\s*=\s*(.*?);", response.text, re.DOTALL)
-    if not state:
-        raise ValueError("Turnierdaten nicht gefunden")
-
-    tournaments = json.loads(state.group(1)).get("tournaments", {})
-    tournament = next(iter(tournaments.values()))["data"]
-    matches = (
-        tournament.get("groupMatches")
-        or tournament.get("finalMatches")
-        or []
-    )
-    if not matches:
-        raise ValueError("Keine Gruppenspiele gefunden")
-    return matches
+    # group matches
+    groups_match = re.search(r'"groupMatches"\s*:\s*\[(.*?)\]', response.text, re.DOTALL)
+    group_result = (-1,0,0)
+    if groups_match:
+        group_games = re.findall(r'"gameId"\s*:\s*"(\d+)"',groups_match.group(1), re.DOTALL)
+        group_result = (
+            len(group_games),
+            int(group_games[0]),
+            int(group_games[-1])
+        )
+        
+    # final matches
+    finals_match = re.search(r'"finalMatches"\s*:\s*\[(.*?)\]', response.text, re.DOTALL)
+    final_result = (-1,0,0)
+    if finals_match:
+        final_games = re.findall(r'"gameId"\s*:\s*"(\d+)"',finals_match.group(1), re.DOTALL)
+        final_result = (
+            len(final_games),
+            int(final_games[0]),
+            int(final_games[-1])
+        )
+    # out ((count, first id, last id) seperate for final and group games)
+    return (group_result, final_result)
 
 def matches_widget_url(start, end, tournament_id, final_round):
     params = {
@@ -248,8 +258,10 @@ def matches_pages(tournament_id, final_round):
 
 @app.get("/")
 def presentation_index():
-    """Es gibt keine gemischte Praesentation mehr."""
-    return redirect("/turnier")
+    if SINAGE_MODE == "TURNIER":
+        return redirect("/turnier")
+    elif SINAGE_MODE == "SPONSORING":
+        return redirect("/sponsoring")
 
 
 @app.get("/turnier")
@@ -311,4 +323,7 @@ def health():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8000)
+    #app.run(host="127.0.0.1", port=8000)
+    print(tournament_matches(TOURNAMENT_ID))
+    print(tournament_matches(SINAGE_TOURNAMENT_IDS))
+    print(tournament_matches(FINAL_TOURNAMENT_ID))
