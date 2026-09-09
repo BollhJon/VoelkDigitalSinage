@@ -168,7 +168,11 @@ def group_label(index):
             return label
         index -= 1
 
-def tournament_widgets(tournament_id):
+def group_widgets(tournament):
+    tournament_id = tournament[0]
+    group_count = tournament[2][0]
+    if group_count == 0:
+        return []
     style = {
         "s[size]": 9,
         "s[sizeheader]": 10,
@@ -191,17 +195,24 @@ def tournament_widgets(tournament_id):
         "s[wrap]": "false",
     }
     widgets = []
-    for index, group in enumerate(tournament_groups(tournament_id)):
-        base = {"id": tournament_id, "gr": group, **style}
+    for group in range(group_count):
+        base = {"id": tournament_id, "gr": group+1, **style}
         table = {**base, "s[logosize]": 20}
         matches = {**base, "s[ehrsize]": 10, "s[ehrtop]": 9, "s[ehrbottom]": 3}
         widgets.append({
             "group": group,
-            "label": group_label(index),
+            "label": group_label(group),
             "table_url": "https://www.meinturnierplan.ch/displayTable.php?" + urlencode(table) + "&sbr",
-            # Ohne mn-Parameter zeigt das Widget alle Spiele dieser Gruppe.
             "matches_url": "https://www.meinturnierplan.ch/displayMatches.php?" + urlencode(matches) + "&sbr",
         })
+    return widgets
+
+def group_allwidgets(tournaments):
+    widgets = []
+    for tournament in tournaments:
+        widget = group_widgets(tournament)
+        if widget != []:
+            widgets = widget
     return widgets
 
 def matches_widget_url(start, end, tournament_id, final_round):
@@ -235,31 +246,43 @@ def matches_widget_url(start, end, tournament_id, final_round):
     return "https://www.meinturnierplan.ch/displayMatches.php?" + urlencode(params) + flags
 
 
-def matches_pages(tournament_id, final_round):
-    if final_round:
-        matches_per_page = FINAL_MATCHES_PER_PAGE
-    else:
-        matches_per_page = MATCHES_PER_PAGE
+def matches_pages(tournament):
+    tournament_id = tournament[0]
+    group_matches = tournament[2][1]
+    final_matches = tournament[3][1]
+
+    group_pages = []
+    #groupmatches
+    if group_matches[0] != -1:
+        for start in range(group_matches[1], group_matches[2]-1, MATCHES_PER_PAGE):
+            end = min(start + MATCHES_PER_PAGE - 1, group_matches[2])
+            group_pages.append({
+                "start": start, 
+                "end": end, 
+                "url": matches_widget_url(start, end, tournament_id, False),
+            })
     
-    try:
-        matches = tournament_matches(tournament_id)
-        numbers = [
-            int(match.get("displayId") or match.get("matchNumber") or index + 1)
-            for index, match in enumerate(matches)
-        ]
-        first, last = min(numbers), max(numbers)
-    except (requests.RequestException, ValueError, KeyError, IndexError, StopIteration) as e:
-        first, last = 1, matches_per_page
+    final_pages = []
+    #finalmatches
+    if final_matches[0] != -1:
+        for start in range(final_matches[1], final_matches[2]-1, FINAL_MATCHES_PER_PAGE):
+            end = min(start + FINAL_MATCHES_PER_PAGE - 1, final_matches[2])
+            final_pages.append({
+                "start": start, 
+                "end": end, 
+                "url": matches_widget_url(start, end, tournament_id, True),
+            })
+    
+    return group_pages, final_pages
 
-
-    pages = []
-    for start in range(first, last + 1, matches_per_page):
-        end = min(start + matches_per_page - 1, last)
-        pages.append({
-            "start": start, 
-            "end": end, 
-            "url": matches_widget_url(start, end, tournament_id, final_round),
-        })
+def matches_allpages(tournaments):
+    pages = [[],[]]
+    for tournament in tournaments:
+        group_pages, final_pages = matches_pages(tournament)
+        if group_pages != []:
+            pages[0] = group_pages
+        if final_pages != []:
+            pages[1] = final_pages
     return pages
 
 
@@ -277,43 +300,43 @@ def presentation_index():
 
 @app.get("/turnier")
 def tournament_presentation():
+    widgets = group_allwidgets(tournaments)
+    match_pages = matches_allpages(tournaments)
     return render_template(
         "tournament.j2", 
         mode="tournament",
-        match_pages=matches_pages(TOURNAMENT_ID, False),
-        final_match_pages=matches_pages(FINAL_TOURNAMENT_ID, True), 
-        widgets=tournament_widgets(TOURNAMENT_ID),
+        match_pages=match_pages[0],
+        final_match_pages=match_pages[1], 
+        widgets=widgets,
         tournament_display_duration=tournament_display_duration(),
-        show_group_phase=True, 
-        show_final_phase=True,
     )
 
 
 @app.get("/group")
 def group_presentation():
+    widgets = group_allwidgets(tournaments)
+    match_pages = matches_allpages(tournaments)
     return render_template(
-        "presentation.html",
+        "tournament.j2",
         mode="group", 
-        match_pages=matches_pages(TOURNAMENT_ID, False),
+        match_pages=match_pages[0],
         final_match_pages=[], 
-        widgets=tournament_widgets(TOURNAMENT_ID),
+        widgets=widgets,
         tournament_display_duration=tournament_display_duration(),
-        show_group_phase=True, 
-        show_final_phase=False,
     )
 
 
 @app.get("/finale")
 def final_presentation():
+    widgets = group_allwidgets(tournaments)
+    match_pages = matches_allpages(tournaments)
     return render_template(
-        "presentation.html", 
+        "tournament.j2", 
         mode="finale", 
-        match_pages=[], 
-        final_match_pages=matches_pages(FINAL_TOURNAMENT_ID, True), 
+        match_pages=[],
+        final_match_pages=match_pages[1], 
         widgets=[],
         tournament_display_duration=tournament_display_duration(),
-        show_group_phase=False, 
-        show_final_phase=True,
     )
 
 
@@ -337,11 +360,9 @@ def health():
 
 if __name__ == "__main__":
     # Spielplan Infos
-    #SINAGE_TOURNAMENT_IDS = os.environ.get("SINAGE_TOURNAMENT_IDS", "0jj2i6bso4").split(';')
-    SINAGE_TOURNAMENT_IDS = os.environ.get("SINAGE_TOURNAMENT_IDS", "1757255205;1757569613").split(';')
+    SINAGE_TOURNAMENT_IDS = os.environ.get("SINAGE_TOURNAMENT_IDS", "0jj2i6bso4").split(';')
+    #SINAGE_TOURNAMENT_IDS = os.environ.get("SINAGE_TOURNAMENT_IDS", "1757255205;1757569613").split(';')
     for id in SINAGE_TOURNAMENT_IDS:
         tournaments.append(tournament_infos(id))
-
-    print(tournaments)
 
     app.run(host="127.0.0.1", port=8000)

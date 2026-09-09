@@ -1,6 +1,48 @@
 {% extends "base.j2" %}
 
 {% block slides %}
+{% if mode in ('tournament', 'group') %}
+{% for widget in widgets %}
+    <section class="tournament-slide" data-autoslide="{{ tournament_display_duration }}">
+      <h1>Gruppe {{ widget.label }}</h1>
+      <div class="group-widget-grid">
+        <div>
+          <h2>Tabelle</h2>
+          <iframe class="group-table-widget" title="Rangliste Gruppe {{ widget.label }}" src="{{ widget.table_url }}" allowtransparency="true" frameborder="0"></iframe>
+          <div class="table-legend">
+            <div><span>Pl</span><span>Platzierung</span></div>
+            <div><span>Sp</span><span>Gespielte Spiele</span></div>
+            <div><span>S</span><span>Siege</span></div>
+            <div><span>U</span><span>Unentschieden</span></div>
+            <div><span>N</span><span>Niederlagen</span></div>
+            <div><span>T</span><span>Tore</span></div>
+            <div><span>TD</span><span>Tordifferenz</span></div>
+            <div><span>Pkt</span><span>Punkte</span></div>
+          </div>
+        </div>
+        <div>
+          <h2>Spiele der Gruppe</h2>
+          <iframe class="group-matches-widget" title="Spiele Gruppe {{ widget.label }}" src="{{ widget.matches_url }}" allowtransparency="true" frameborder="0"></iframe>
+        </div>
+      </div>
+    </section>
+    {% endfor %}
+    {% for page in match_pages %}
+    <section class="tournament-slide current-matches-slide" data-autoslide="{{ tournament_display_duration }}">
+      <h1>Gruppenspiele</h1>
+      <iframe class="current-matches-widget" title="Spiele {{ page.start }} bis {{ page.end }}" src="{{ page.url }}" allowtransparency="true" frameborder="0"></iframe>
+    </section>
+    {% endfor %}
+{% endif %}
+
+{% if mode in ('tournament', 'finale') %}
+{% for page in final_match_pages %}
+    <section class="tournament-slide current-matches-slide" data-autoslide="{{ tournament_display_duration }}">
+      <h1>Finalspiele</h1>
+      <iframe class="current-matches-widget" title="Finalspiele {{ page.start }} bis {{ page.end }}" src="{{ page.url }}" allowtransparency="true" frameborder="0"></iframe>
+    </section>
+    {% endfor %}
+{% endif %}
 {% endblock %}
 
 {% block javascript %}
@@ -22,7 +64,7 @@
         document.querySelectorAll('.tournament-slide iframe').forEach(widget => {
             widget.src = widget.src;
         });
-    }, 60000);
+    }, 180000);
 
 </script>
 {% endblock %}
