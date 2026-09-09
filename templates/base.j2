@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="de">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Voelk Digital Signage</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='static/reveal/dist/reveal.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='static/reveal/dist/theme/black.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='static/css/signage.css') }}">
+
+    {% block head %}
+    {% endblock %}
+</head>
+
+<body class="{{ mode }}-presentation">
+    <div class="reveal">
+        <div class="slides">
+            {% block slides %}
+            {% endblock %}
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='static/reveal/dist/reveal.js') }}"></script>
+    {% block javascript %}
+    {% endblock %}
+</body>
+
+</html>

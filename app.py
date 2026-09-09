@@ -3,6 +3,7 @@
 import os
 import json
 import re
+import html
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -24,18 +25,10 @@ OTHER_SPONSORS_PER_CYCLE = 4
 TOURNAMENT_DISPLAY_DURATION_SECONDS = 3
 MATCHES_PER_PAGE = 20
 FINAL_MATCHES_PER_PAGE = 10
-# Spielplan IDs
-SINAGE_TOURNAMENT_IDS = os.environ.get("SINAGE_TOURNAMENT_IDS", "0jj2i6bso4")
-TOURNAMENT_ID = "1757255205"
-FINAL_TOURNAMENT_ID = "1757569613"
-# Startup Mode
-#SINAGE_MODE = os.environ.get("SINAGE_MODE", "SPONSORING")
-SINAGE_MODE = os.environ.get("SINAGE_MODE", "TURNIER")
-
-
+# Tournament Infos
+tournaments = []
 
 def media_entry(path: Path, root: Path):
-    """Bereitet eine lokale Bild- oder Video-Datei fuer das Template vor."""
     return {
         "path": path.relative_to(root).as_posix(),
         "type": "video" if path.suffix.casefold() in VIDEO_EXTENSIONS else "image",
@@ -44,19 +37,7 @@ def media_entry(path: Path, root: Path):
     }
 
 
-def group_label(index):
-    """Erzeugt Gruppenbezeichnungen A, B, ..., Z, AA, AB, ... ."""
-    label = ""
-    while True:
-        index, remainder = divmod(index, 26)
-        label = chr(ord("A") + remainder) + label
-        if index == 0:
-            return label
-        index -= 1
-
-
 def sponsor_profiles():
-    """Liest Sponsor-Ordner und ihre Beitraege inklusive optionaler Logos ein."""
     if not SPONSOR_DIRECTORY.is_dir():
         return [], []
 
@@ -116,8 +97,78 @@ def save_the_date_media():
     return media_entry(image, Path(app.static_folder)) if image.is_file() else None
 
 
+def tournament_request(tournament_id):
+    response = requests.get(
+        f"https://www.meinturnierplan.ch/showit.php?id={tournament_id}",
+        headers={"User-Agent": "VoelkDigitalSignage/1.0"},
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.text
+
+def tournament_name(request_text):
+    title_match = re.search(r"<title>(.*?)</title>", request_text, re.IGNORECASE | re.DOTALL)
+
+    if title_match:
+        return html.unescape(title_match.group(1)).strip()
+
+    return None
+
+def tournament_groups(request_text):
+    groups_match = re.search(r'"groups"\s*:\s*\[(.*?)\]', request_text, re.DOTALL)
+    groups_count = 0
+    if groups_match:
+        groups_count = len(re.findall(r'"name"\s*:\s*"[^"]+"', groups_match.group(1), re.DOTALL))
+
+    final_groups_match = re.search(r'"finalGroups"\s*:\s*\[(.*?)\]', request_text, re.DOTALL)
+    final_groups_count = 0
+    if final_groups_match:
+        final_groups_count = len(re.findall(r'"name"\s*:\s*"[^"]+"', final_groups_match.group(1), re.DOTALL))
+
+    return (groups_count, final_groups_count)
+
+def tournament_matches(request_text):
+    # group matches
+    groups_match = re.search(r'"groupMatches"\s*:\s*\[(.*?)\]', request_text, re.DOTALL)
+    group_result = (-1,0,0)
+    if groups_match:
+        group_games = re.findall(r'"gameId"\s*:\s*"(\d+)"',groups_match.group(1), re.DOTALL)
+        group_result = (
+            len(group_games),
+            int(group_games[0]),
+            int(group_games[-1])
+        )
+        
+    # final matches
+    finals_match = re.search(r'"finalMatches"\s*:\s*\[(.*?)\]', request_text, re.DOTALL)
+    final_result = (-1,0,0)
+    if finals_match:
+        final_games = re.findall(r'"gameId"\s*:\s*"(\d+)"',finals_match.group(1), re.DOTALL)
+        final_result = (
+            len(final_games),
+            int(final_games[0]),
+            int(final_games[-1])
+        )
+    # out ((count, first id, last id) seperate for final and group games)
+    return (group_result, final_result)
+
+def tournament_infos(tournament_id):
+    response = tournament_request(tournament_id)
+    title = tournament_name(response)
+    groups = tournament_groups(response)
+    matches = tournament_matches(response)
+    return (tournament_id, title, (groups[0], matches[0]), (groups[1], matches[1]))
+
+def group_label(index):
+    label = ""
+    while True:
+        index, remainder = divmod(index, 26)
+        label = chr(ord("A") + remainder) + label
+        if index == 0:
+            return label
+        index -= 1
+
 def tournament_widgets(tournament_id):
-    """Erzeugt je Gruppe die offiziellen Ranglisten- und Spielplan-Widgets."""
     style = {
         "s[size]": 9,
         "s[sizeheader]": 10,
@@ -153,50 +204,6 @@ def tournament_widgets(tournament_id):
         })
     return widgets
 
-def tournament_groups(tournament_id):
-    response = requests.get(
-        f"https://www.meinturnierplan.ch/showit.php?id={tournament_id}",
-        headers={"User-Agent": "VoelkDigitalSignage/1.0"},
-        timeout=10,
-    )
-    response.raise_for_status()
-    groups_match = re.search(r'"groups"\s*:\s*\[(.*?)\]', response.text, re.DOTALL)
-    if not groups_match:
-        return tuple()
-    groups_count = len(re.findall(r'"name"\s*:\s*"[^"]+"', groups_match.group(1), re.DOTALL))
-    return tuple(str(group) for group in range(1, groups_count + 1))
-
-def tournament_matches(tournament_id):
-    response = requests.get(
-        f"https://www.meinturnierplan.ch/showit.php?id={tournament_id}",
-        headers={"User-Agent": "VoelkDigitalSignage/1.0"},
-        timeout=10,
-    )
-    response.raise_for_status()
-    # group matches
-    groups_match = re.search(r'"groupMatches"\s*:\s*\[(.*?)\]', response.text, re.DOTALL)
-    group_result = (-1,0,0)
-    if groups_match:
-        group_games = re.findall(r'"gameId"\s*:\s*"(\d+)"',groups_match.group(1), re.DOTALL)
-        group_result = (
-            len(group_games),
-            int(group_games[0]),
-            int(group_games[-1])
-        )
-        
-    # final matches
-    finals_match = re.search(r'"finalMatches"\s*:\s*\[(.*?)\]', response.text, re.DOTALL)
-    final_result = (-1,0,0)
-    if finals_match:
-        final_games = re.findall(r'"gameId"\s*:\s*"(\d+)"',finals_match.group(1), re.DOTALL)
-        final_result = (
-            len(final_games),
-            int(final_games[0]),
-            int(final_games[-1])
-        )
-    # out ((count, first id, last id) seperate for final and group games)
-    return (group_result, final_result)
-
 def matches_widget_url(start, end, tournament_id, final_round):
     params = {
         "id": tournament_id,
@@ -225,7 +232,7 @@ def matches_widget_url(start, end, tournament_id, final_round):
         "s[wrap]": "false",
     }
     flags = "&se&sp&sbr" if final_round else "&sbr"
-    return "https://www.meinturnierplan.de/displayMatches.php?" + urlencode(params) + flags
+    return "https://www.meinturnierplan.ch/displayMatches.php?" + urlencode(params) + flags
 
 
 def matches_pages(tournament_id, final_round):
@@ -258,6 +265,10 @@ def matches_pages(tournament_id, final_round):
 
 @app.get("/")
 def presentation_index():
+    # Startup Mode
+    #SINAGE_MODE = os.environ.get("SINAGE_MODE", "SPONSORING")
+    SINAGE_MODE = os.environ.get("SINAGE_MODE", "TURNIER")
+
     if SINAGE_MODE == "TURNIER":
         return redirect("/turnier")
     elif SINAGE_MODE == "SPONSORING":
@@ -267,33 +278,42 @@ def presentation_index():
 @app.get("/turnier")
 def tournament_presentation():
     return render_template(
-        "presentation.html", mode="tournament", gold_sponsors=[], other_sponsors=[],
-        other_sponsors_per_cycle=OTHER_SPONSORS_PER_CYCLE,
-        match_pages=matches_pages(TOURNAMENT_ID, False), final_match_pages=matches_pages(FINAL_TOURNAMENT_ID, True), widgets=tournament_widgets(TOURNAMENT_ID),
+        "tournament.j2", 
+        mode="tournament",
+        match_pages=matches_pages(TOURNAMENT_ID, False),
+        final_match_pages=matches_pages(FINAL_TOURNAMENT_ID, True), 
+        widgets=tournament_widgets(TOURNAMENT_ID),
         tournament_display_duration=tournament_display_duration(),
-        show_group_phase=True, show_final_phase=True,
+        show_group_phase=True, 
+        show_final_phase=True,
     )
 
 
 @app.get("/group")
 def group_presentation():
     return render_template(
-        "presentation.html", mode="group", gold_sponsors=[], other_sponsors=[],
-        other_sponsors_per_cycle=OTHER_SPONSORS_PER_CYCLE,
-        match_pages=matches_pages(TOURNAMENT_ID, False), final_match_pages=[], widgets=tournament_widgets(TOURNAMENT_ID),
+        "presentation.html",
+        mode="group", 
+        match_pages=matches_pages(TOURNAMENT_ID, False),
+        final_match_pages=[], 
+        widgets=tournament_widgets(TOURNAMENT_ID),
         tournament_display_duration=tournament_display_duration(),
-        show_group_phase=True, show_final_phase=False,
+        show_group_phase=True, 
+        show_final_phase=False,
     )
 
 
 @app.get("/finale")
 def final_presentation():
     return render_template(
-        "presentation.html", mode="finale", gold_sponsors=[], other_sponsors=[],
-        other_sponsors_per_cycle=OTHER_SPONSORS_PER_CYCLE,
-        match_pages=[], final_match_pages=matches_pages(FINAL_TOURNAMENT_ID, True), widgets=[],
+        "presentation.html", 
+        mode="finale", 
+        match_pages=[], 
+        final_match_pages=matches_pages(FINAL_TOURNAMENT_ID, True), 
+        widgets=[],
         tournament_display_duration=tournament_display_duration(),
-        show_group_phase=False, show_final_phase=True,
+        show_group_phase=False, 
+        show_final_phase=True,
     )
 
 
@@ -301,19 +321,12 @@ def final_presentation():
 def sponsoring_presentation():
     gold_sponsors, other_sponsors = sponsor_profiles()
     return render_template(
-        "presentation.html",
-        mode="sponsors",
+        "sponsors.j2",
         gold_sponsors=gold_sponsors,
         other_sponsors=other_sponsors,
         save_the_date=save_the_date_media(),
         sponsoring_durations=sponsoring_durations(),
         other_sponsors_per_cycle=OTHER_SPONSORS_PER_CYCLE,
-        match_pages=[],
-        final_match_pages=[],
-        tournament_display_duration=tournament_display_duration(),
-        show_group_phase=False,
-        show_final_phase=False,
-        widgets=[],
     )
 
 
@@ -323,7 +336,12 @@ def health():
 
 
 if __name__ == "__main__":
-    #app.run(host="127.0.0.1", port=8000)
-    print(tournament_matches(TOURNAMENT_ID))
-    print(tournament_matches(SINAGE_TOURNAMENT_IDS))
-    print(tournament_matches(FINAL_TOURNAMENT_ID))
+    # Spielplan Infos
+    #SINAGE_TOURNAMENT_IDS = os.environ.get("SINAGE_TOURNAMENT_IDS", "0jj2i6bso4").split(';')
+    SINAGE_TOURNAMENT_IDS = os.environ.get("SINAGE_TOURNAMENT_IDS", "1757255205;1757569613").split(';')
+    for id in SINAGE_TOURNAMENT_IDS:
+        tournaments.append(tournament_infos(id))
+
+    print(tournaments)
+
+    app.run(host="127.0.0.1", port=8000)

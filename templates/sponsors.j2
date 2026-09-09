@@ -1,0 +1,111 @@
+{% extends "base.j2" %}
+
+{% block slides %}
+{% if save_the_date %}
+    <section class="sponsor-slide save-the-date" data-sponsor-cycle-start
+        data-autoslide="{{ sponsoring_durations.save_the_date }}"><img
+            src="{{ url_for('static', filename=save_the_date.path) }}" alt="Save the Date"></section>
+{% endif %}
+{% for sponsor in gold_sponsors %}
+    <section class="sponsor-slide dynamic-sponsor-slide" {% if not save_the_date and loop.first %}
+        data-sponsor-cycle-start{% endif %} data-sponsor-id="{{ sponsor.id }}"
+        data-autoslide="{{ sponsoring_durations.gold }}"></section>
+{% endfor %}
+{% if other_sponsors %}
+    {% for _ in range(other_sponsors_per_cycle) %}
+        <section class="sponsor-slide dynamic-sponsor-slide" {% if not save_the_date and not gold_sponsors and loop.first %}
+            data-sponsor-cycle-start{% endif %} data-other-sponsor data-autoslide="{{ sponsoring_durations.other }}"></section>
+    {% endfor %}
+{% endif %}
+{% endblock %}
+
+{% block javascript %}
+<script>
+    const goldSponsors = {{ gold_sponsors| tojson }};
+    const otherSponsors = {{ other_sponsors| tojson }};
+    const staticRoot = {{ url_for('static', filename = '') | tojson }};
+    const selectedMedia = new Map();
+    let previousOtherSponsorIds = [];
+
+    function shuffle(items) {
+        const result = [...items];
+        for (let index = result.length - 1; index > 0; index -= 1) {
+            const replacement = Math.floor(Math.random() * (index + 1));
+            [result[index], result[replacement]] = [result[replacement], result[index]];
+        }
+        return result;
+    }
+
+    function nextMedia(sponsor) {
+        const previous = selectedMedia.get(sponsor.id);
+        const candidates = sponsor.media.filter(item => item.path !== previous);
+        const pool = candidates.length ? candidates : sponsor.media;
+        const media = pool[Math.floor(Math.random() * pool.length)];
+        selectedMedia.set(sponsor.id, media.path);
+        return media;
+    }
+
+    function randomOtherSponsors(count) {
+        // Bevorzugt Sponsoren, die im vorherigen Zyklus nicht gezeigt wurden.
+        // Dadurch wechselt die Vierergruppe bei den vorhandenen neun Sponsoren komplett.
+        let candidates = otherSponsors.filter(sponsor => !previousOtherSponsorIds.includes(sponsor.id));
+        if (candidates.length < count) {
+            candidates = [...candidates, ...otherSponsors.filter(sponsor => !candidates.includes(sponsor))];
+        }
+        const selection = shuffle(candidates).slice(0, count);
+        previousOtherSponsorIds = selection.map(sponsor => sponsor.id);
+        return selection;
+    }
+
+    function renderSponsor(slide, sponsor) {
+        const media = nextMedia(sponsor);
+        const source = staticRoot + media.path;
+        const logo = sponsor.small_logo && !media.is_big_logo
+            ? `<img class="sponsor-small-logo" src="${staticRoot}${sponsor.small_logo.path}" alt="">`
+            : '';
+        const content = media.type === 'video'
+            ? `<video muted playsinline loop preload="metadata"><source src="${source}" type="${media.mime}"></video>`
+            : `<img src="${source}" alt="${sponsor.name}">`;
+        slide.innerHTML = content + logo;
+    }
+
+    function prepareSponsoringCycle() {
+        document.querySelectorAll('.dynamic-sponsor-slide[data-sponsor-id]').forEach(slide => {
+            const sponsor = goldSponsors.find(item => item.id === slide.dataset.sponsorId);
+            if (sponsor) renderSponsor(slide, sponsor);
+        });
+        const otherSlides = [...document.querySelectorAll('.dynamic-sponsor-slide[data-other-sponsor]')];
+        const selectedOthers = randomOtherSponsors(otherSlides.length);
+        otherSlides.forEach((slide, index) => {
+            if (selectedOthers[index]) renderSponsor(slide, selectedOthers[index]);
+        });
+    }
+
+    prepareSponsoringCycle();
+
+    Reveal.initialize({
+        width: '100%',
+        height: '100%',
+        margin: 0.04,
+        autoSlide: {{ sponsoring_durations.other }},
+        loop: true,
+        controls: false,
+        progress: false,
+        transition: 'fade',
+        autoSlideStoppable: false
+    });
+
+    function playCurrentVideo() {
+        document.querySelectorAll('.sponsor-slide video').forEach(video => video.pause());
+        const video = Reveal.getCurrentSlide().querySelector('video');
+        if (video) video.play().catch(() => { });
+    }
+    Reveal.on('ready', playCurrentVideo);
+    Reveal.on('slidechanged', playCurrentVideo);
+    Reveal.on('slidetransitionend', event => {
+        // Erst nach der Fade-Ueberblendung laden: Die letzte Sponsorenfolie
+        // bleibt bis zu ihrem vollstaendigen Ausblenden unveraendert sichtbar.
+        if (event.currentSlide.hasAttribute('data-sponsor-cycle-start')) prepareSponsoringCycle();
+    });
+</script>
+{% endblock %}
