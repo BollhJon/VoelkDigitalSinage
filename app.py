@@ -355,7 +355,8 @@ def sponsoring_presentation():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    mode = os.environ.get("SINAGE_MODE", "TURNIER"), 
+    return [mode, tournaments, sponsor_profiles()]
 
 
 if __name__ == "__main__":
