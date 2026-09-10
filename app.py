@@ -300,6 +300,8 @@ def presentation_index():
 
 @app.get("/turnier")
 def tournament_presentation():
+    for id in SINAGE_TOURNAMENT_IDS:
+        tournaments.append(tournament_infos(id))
     widgets = group_allwidgets(tournaments)
     match_pages = matches_allpages(tournaments)
     return render_template(
@@ -314,6 +316,8 @@ def tournament_presentation():
 
 @app.get("/group")
 def group_presentation():
+    for id in SINAGE_TOURNAMENT_IDS:
+        tournaments.append(tournament_infos(id))
     widgets = group_allwidgets(tournaments)
     match_pages = matches_allpages(tournaments)
     return render_template(
@@ -328,6 +332,8 @@ def group_presentation():
 
 @app.get("/finale")
 def final_presentation():
+    for id in SINAGE_TOURNAMENT_IDS:
+        tournaments.append(tournament_infos(id))
     widgets = group_allwidgets(tournaments)
     match_pages = matches_allpages(tournaments)
     return render_template(
@@ -355,6 +361,8 @@ def sponsoring_presentation():
 
 @app.get("/health")
 def health():
+    for id in SINAGE_TOURNAMENT_IDS:
+        tournaments.append(tournament_infos(id))
     mode = os.environ.get("SINAGE_MODE", "TURNIER"), 
     return [mode, tournaments, sponsor_profiles()]
 
@@ -363,7 +371,5 @@ if __name__ == "__main__":
     # Spielplan Infos
     SINAGE_TOURNAMENT_IDS = os.environ.get("SINAGE_TOURNAMENT_IDS", "0jj2i6bso4").split(';')
     #SINAGE_TOURNAMENT_IDS = os.environ.get("SINAGE_TOURNAMENT_IDS", "1757255205;1757569613").split(';')
-    for id in SINAGE_TOURNAMENT_IDS:
-        tournaments.append(tournament_infos(id))
 
     app.run(host="127.0.0.1", port=8000)
